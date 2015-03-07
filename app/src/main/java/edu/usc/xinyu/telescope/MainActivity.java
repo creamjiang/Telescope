@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
 
     private Thread audioThread;
     volatile boolean runAudioThread = true;
-    private AudioRecord audioRecord;
+
     private AudioRecordRunnable audioRecordRunnable;
 
     private CameraView cameraView;
@@ -181,7 +181,7 @@ public class MainActivity extends Activity {
         Log.i(LOG_TAG, "recorder.setFrameRate(frameRate)");
 
         // Create audio recording thread
-        audioRecordRunnable = new AudioRecordRunnable();
+        audioRecordRunnable = new AudioRecordRunnable(sampleAudioRateInHz, recorder);
         audioThread = new Thread(audioRecordRunnable);
     }
 
@@ -213,67 +213,11 @@ public class MainActivity extends Activity {
             try {
                 recorder.stop();
                 recorder.release();
+                audioRecordRunnable.StopRecording();
             } catch (FFmpegFrameRecorder.Exception e) {
                 e.printStackTrace();
             }
             recorder = null;
-        }
-    }
-
-    //---------------------------------------------
-    // audio thread, gets and encodes audio data
-    //---------------------------------------------
-    class AudioRecordRunnable implements Runnable {
-
-        @Override
-        public void run() {
-            // Set the thread priority
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
-
-            // Audio
-            int bufferSize;
-            short[] audioData;
-            int bufferReadResult;
-
-            bufferSize = AudioRecord.getMinBufferSize(sampleAudioRateInHz,
-                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-            audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, sampleAudioRateInHz,
-                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
-
-            audioData = new short[bufferSize];
-
-            Log.d(LOG_TAG, "audioRecord.startRecording()");
-            audioRecord.startRecording();
-
-            // Audio Capture/Encoding Loop
-            while (runAudioThread) {
-                // Read from audioRecord
-                bufferReadResult = audioRecord.read(audioData, 0, audioData.length);
-                if (bufferReadResult > 0) {
-                    //Log.i(LOG_TAG,"audioRecord bufferReadResult: " + bufferReadResult);
-
-                    // Changes in this variable may not be picked up despite it being "volatile"
-                    if (recording) {
-                        try {
-                            // Write to FFmpegFrameRecorder
-                            Buffer[] buffer = {ShortBuffer.wrap(audioData, 0, bufferReadResult)};
-                            recorder.record(buffer);
-                        } catch (FFmpegFrameRecorder.Exception e) {
-                            Log.i(LOG_TAG,e.getMessage());
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            }
-            Log.i(LOG_TAG,"AudioThread Finished");
-
-            /* Capture/Encoding finished, release recorder */
-            if (audioRecord != null) {
-                audioRecord.stop();
-                audioRecord.release();
-                audioRecord = null;
-                Log.i(LOG_TAG,"audioRecord released");
-            }
         }
     }
 
@@ -400,7 +344,6 @@ public class MainActivity extends Activity {
                 Log.e(LOG_TAG, e.getMessage());
                 e.printStackTrace();
             } catch (IOException e) {
-                Log.e(LOG_TAG, e.getMessage());
                 e.printStackTrace();
             }
             return null;
