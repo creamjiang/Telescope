@@ -9,6 +9,7 @@ import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.util.Log;
@@ -24,7 +25,18 @@ import android.widget.LinearLayout;
 import com.googlecode.javacv.FFmpegFrameRecorder;
 import com.googlecode.javacv.cpp.opencv_core.IplImage;
 
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.Buffer;
 import java.nio.ShortBuffer;
 
@@ -35,8 +47,8 @@ public class MainActivity extends Activity {
     private final static String LOG_TAG = "MainActivity";
 
     private PowerManager.WakeLock mWakeLock;
-
-    private String SERVER_ADDRESS = "http://192.168.0.9:8090/webcam.ffm";
+    private static final String CS_SERVER = "http://cs-server.usc.edu:33253/getaddr.php";
+    private String serverAddress = "http://192.168.0.9:8090/webcam.ffm";
 
     private volatile FFmpegFrameRecorder recorder;
     boolean recording = false;
@@ -58,12 +70,16 @@ public class MainActivity extends Activity {
 
     private LinearLayout mainLayout;
 
+    AddressRetriever addressRetriever;
+
     @Override
     protected void onCreate(Bundle bundle) {
         super.onCreate(bundle);
         setContentView(R.layout.activity_main);
         initLayout();
-        initRecorder();
+        addressRetriever = new AddressRetriever();
+        addressRetriever.execute(CS_SERVER);
+
     }
 
     @Override
@@ -151,11 +167,11 @@ public class MainActivity extends Activity {
             Log.i(LOG_TAG, "IplImage.create");
         }
 
-        recorder = new FFmpegFrameRecorder(SERVER_ADDRESS, imageWidth, imageHeight, 1);
-        Log.i(LOG_TAG, "FFmpegFrameRecorder: " + SERVER_ADDRESS + " imageWidth: " + imageWidth + " imageHeight " + imageHeight);
+        recorder = new FFmpegFrameRecorder(serverAddress, imageWidth, imageHeight, 1);
+        Log.i(LOG_TAG, "FFmpegFrameRecorder: " + serverAddress + " imageWidth: " + imageWidth + " imageHeight " + imageHeight);
 
         recorder.setFormat("ffm");
-        Log.i(LOG_TAG, "recorder.setFormat(\"ffm\")");
+        Log.i(LOG_TAG, "recorder.setFormat(ffm)");
 
         recorder.setSampleRate(sampleAudioRateInHz);
         Log.i(LOG_TAG, "recorder.setSampleRate(sampleAudioRateInHz)");
@@ -364,6 +380,43 @@ public class MainActivity extends Activity {
                     e.printStackTrace();
                 }
             }
+        }
+    }
+
+    class AddressRetriever extends AsyncTask<String, Void, String> {
+        @Override
+        protected String doInBackground(String... params) {
+            String serverAddress = params[0];
+            try {
+                URL url = new URL(serverAddress);
+                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+                InputStream inputStream = new BufferedInputStream(httpURLConnection.getInputStream());
+                InputStreamReader isr = new InputStreamReader(inputStream);
+                BufferedReader br = new BufferedReader(isr);
+                String response = br.readLine();
+                Log.d(LOG_TAG, "JSON=" + response);
+                return response;
+            } catch (MalformedURLException e) {
+                Log.e(LOG_TAG, e.getMessage());
+                e.printStackTrace();
+            } catch (IOException e) {
+                Log.e(LOG_TAG, e.getMessage());
+                e.printStackTrace();
+            }
+            return null;
+        }
+        @Override
+        protected void onPostExecute(String s) {
+            try {
+                JSONObject jsonobj = new JSONObject(s);
+                serverAddress = jsonobj.getString("address");
+                Log.d(LOG_TAG, "Server=" + serverAddress);
+                initRecorder();
+            } catch (JSONException e) {
+                Log.e(LOG_TAG, e.getMessage());
+                e.printStackTrace();
+            }
+
         }
     }
 }
